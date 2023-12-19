@@ -8,14 +8,25 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
 #define PORT 8080
 
-GtkWidget *auth_window, *menu_window, *username_entry, *password_entry, *output_label;
+GtkWidget *auth_window, *menu_window, *username_entry, *password_entry, *output_label,*text_view;
 int client_socket;
 gboolean authenticated = FALSE;
 
-void authenticate(GtkWidget *widget, gpointer data) {
+void printMenuToTextView() {
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
+    gtk_text_buffer_set_text(buffer, "Services disponibles :\n", -1);
+    gtk_text_buffer_insert_at_cursor(buffer, "1. Obtenir la date et l'heure\n", -1);
+    gtk_text_buffer_insert_at_cursor(buffer, "2. Liste des fichiers du répertoire\n", -1);
+    gtk_text_buffer_insert_at_cursor(buffer, "3. Contenu d'un fichier\n", -1);
+    gtk_text_buffer_insert_at_cursor(buffer, "4. Durée écoulée depuis la connexion\n", -1);
+    gtk_text_buffer_insert_at_cursor(buffer, "0. Quitter\n", -1);
+}
+
+int authenticate(GtkWidget *widget, gpointer data) {
     const gchar *username = gtk_entry_get_text(GTK_ENTRY(username_entry));
     const gchar *password = gtk_entry_get_text(GTK_ENTRY(password_entry));
 
@@ -23,20 +34,27 @@ void authenticate(GtkWidget *widget, gpointer data) {
     // Exemple simple (à remplacer par une authentification réelle)
     if (g_strcmp0(username, "unix") == 0 && g_strcmp0(password, "unix") == 0) {
         gtk_label_set_text(GTK_LABEL(output_label), "Authentification réussie.");
-        authenticated = TRUE;
+        
+        
+        authenticated = 1;
+        
 
         // Masquer la fenêtre d'authentification
         gtk_widget_hide(auth_window);
 
+        
+
         // Afficher la fenêtre du menu
         gtk_widget_show_all(menu_window);
     } else {
+        authenticated = 0;
         gtk_label_set_text(GTK_LABEL(output_label), "Échec de l'authentification.");
     }
+    return(authenticated);
 }
 
 void showMenu(GtkWidget *widget, gpointer data) {
-    if (authenticated) {
+    
         const char *menuOptions[] = {
             "Services disponibles :",
             "1. Obtenir la date et l'heure",
@@ -54,7 +72,7 @@ void showMenu(GtkWidget *widget, gpointer data) {
         if (!gtk_widget_get_visible(menu_window)) {
             gtk_widget_show_all(menu_window);
         }
-    }
+    
 }
 
 void handleServerResponse(GtkWidget *widget, gpointer data) {
@@ -100,7 +118,11 @@ void handleServerResponse(GtkWidget *widget, gpointer data) {
                 case 2: {
                     char fileList[1024];
                     read(client_socket, fileList, sizeof(fileList));
-                    printf("Liste des fichiers :\n%s\n", fileList);
+                    gchar *label_text = g_strdup_printf("Liste des fichiers :\n%s\n", fileList);
+                    gtk_label_set_text(GTK_LABEL(output_label), label_text);
+                    g_free(label_text);
+                    
+                    //printf("Liste des fichiers :\n%s\n", fileList);
                     break;
                 }
                 case 3: {
@@ -116,7 +138,10 @@ void handleServerResponse(GtkWidget *widget, gpointer data) {
 
                         char fileContent[1024];
                         read(client_socket, fileContent, sizeof(fileContent));
-                        printf("Contenu du fichier :\n%s\n", fileContent);
+                        gchar *label_text = g_strdup_printf("Contenu du fichier :\n%s\n", fileContent);
+                        gtk_label_set_text(GTK_LABEL(output_label), label_text);
+                        g_free(label_text);
+                        
                     }
 
                     gtk_widget_destroy(file_dialog);
@@ -125,11 +150,13 @@ void handleServerResponse(GtkWidget *widget, gpointer data) {
                 case 4: {
                     char duration[50];
                     read(client_socket, duration, sizeof(duration));
-                    printf("Durée depuis la connexion : %s\n", duration);
+                    gchar *label_text = g_strdup_printf("Durée depuis la connexion : %s\n", duration);
+                    gtk_label_set_text(GTK_LABEL(output_label), label_text);
+                    
                     break;
                 }
                 default:
-                    break;
+                    exit(0);
             }
         }
 
@@ -141,6 +168,8 @@ void handleServerResponse(GtkWidget *widget, gpointer data) {
 
 int main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
+    
+    
 
     // Créer la fenêtre d'authentification
     auth_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -184,13 +213,18 @@ int main(int argc, char *argv[]) {
     GtkWidget *menu_grid = gtk_grid_new();
     gtk_container_add(GTK_CONTAINER(menu_window), menu_grid);
 
+    text_view = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(text_view), FALSE);
+    
     GtkWidget *menu_button = gtk_button_new_with_label("Afficher le menu");
     g_signal_connect(menu_button, "clicked", G_CALLBACK(showMenu), NULL);
     gtk_grid_attach(GTK_GRID(menu_grid), menu_button, 0, 0, 1, 1);
 
-    GtkWidget *response_button = gtk_button_new_with_label("Réponse du serveur");
+    GtkWidget *response_button = gtk_button_new_with_label("Tapez votre choix");
     g_signal_connect(response_button, "clicked", G_CALLBACK(handleServerResponse), NULL);
     gtk_grid_attach(GTK_GRID(menu_grid), response_button, 1, 0, 1, 1);
+
+    
 
     output_label = gtk_label_new("");
     gtk_grid_attach(GTK_GRID(menu_grid), output_label, 0, 1, 2, 1);
